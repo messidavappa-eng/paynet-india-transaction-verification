@@ -74,3 +74,12 @@ If WhatsApp shows old preview:
 ---
 
 ✅ **Ready for production deployment!**
+
+## Update (Current Session)
+
+Fixed `payment.hbs` (Root URL /) which was still using broken/generic Unsplash links.
+- Updated `payment.hbs` to use `og-image.png`
+- Updated `admin-login.hbs` to include OG tags
+- Verified `home.hbs`, `login.hbs`, `verify.hbs` are correct.
+
+Now sharing the main link `https://paynet-india-transaction-verification.onrender.com/` will correctly show the custom Paynet preview image.

