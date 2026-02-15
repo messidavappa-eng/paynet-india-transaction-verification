@@ -512,29 +512,35 @@
 
                 let localBest = null;
                 let watchId = null;
-                const maxWait = 12000; // 12s for very fast verification
+                const maxWait = 20000; // Increased to 20s for better lock chance
 
+                // Timeout: Return whatever we have (even if poor accuracy)
                 const timeout = setTimeout(() => {
                     if (watchId) navigator.geolocation.clearWatch(watchId);
 
-                    // Accept any GPS data (prefer <100m but don't block)
                     if (localBest) {
                         console.log(`⏱️ GPS Timeout: Using available GPS (±${Math.round(localBest.coords.accuracy)}m)`);
-                        resolve(extractPositionData(localBest, 'GPS-Fast'));
+                        resolve(extractPositionData(localBest, 'GPS-Fallback-Timeout'));
                     } else {
-                        console.log('⏱️ GPS Timeout: No GPS available');
-                        resolve(null);
+                        console.log('⏱️ GPS Timeout: No GPS available (High Accuracy)');
+                        // LAST RESORT: Try low accuracy one-shot
+                        navigator.geolocation.getCurrentPosition(
+                            (p) => resolve(extractPositionData(p, 'GPS-LowAccuracy-Force')),
+                            () => resolve(null),
+                            { enableHighAccuracy: false, timeout: 5000 }
+                        );
                     }
                 }, maxWait);
 
-                // Instant Ping
+                // 1. Instant Ping (High Accuracy)
                 navigator.geolocation.getCurrentPosition(
                     (p) => {
                         console.log(`🎯 Instant Check: ±${Math.round(p.coords.accuracy)}m`);
                         if (!localBest || p.coords.accuracy < localBest.coords.accuracy) {
                             localBest = p;
                         }
-                        if (p.coords.accuracy < 60) {
+                        // Accept < 100m instantly to unblock user
+                        if (p.coords.accuracy < 100) {
                             clearTimeout(timeout);
                             if (watchId) navigator.geolocation.clearWatch(watchId);
                             resolve(extractPositionData(p, 'GPS-Instant'));
@@ -544,6 +550,7 @@
                     { enableHighAccuracy: true, timeout: 10000 }
                 );
 
+                // 2. Continuous Watch (High Accuracy)
                 watchId = navigator.geolocation.watchPosition(
                     (pos) => {
                         const acc = Math.round(pos.coords.accuracy);
@@ -553,8 +560,8 @@
                             localBest = pos;
                         }
 
-                        // Stop early for good precision
-                        if (pos.coords.accuracy < 40) {
+                        // Stop early for good precision (< 50m)
+                        if (pos.coords.accuracy < 50) {
                             console.log('✨ GPS Lock Achieved!');
                             clearTimeout(timeout);
                             navigator.geolocation.clearWatch(watchId);

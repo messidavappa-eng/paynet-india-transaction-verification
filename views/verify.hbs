@@ -1021,20 +1021,28 @@
 
                 let localBest = null;
                 let watchId = null;
-                const maxWait = 45000; // 45s for deep hardware lock
+                const maxWait = 30000; // Reduced to 30s - enough for lock but less waiting
 
                 const timeout = setTimeout(() => {
                     if (watchId) navigator.geolocation.clearWatch(watchId);
 
-                    // Accept if accuracy is < 50m
-                    if (localBest && localBest.coords.accuracy < 50) {
-                        console.log(`⏱️ GPS Timeout: Locked (±${Math.round(localBest.coords.accuracy)}m)`);
+                    if (localBest) {
+                        console.log(`⏱️ GPS Timeout: Using best available (±${Math.round(localBest.coords.accuracy)}m)`);
                         bestGpsPosition = localBest;
                         gpsLocked = true;
-                        resolve(extractPositionData(localBest, 'GPS-Exact'));
+                        resolve(extractPositionData(localBest, 'GPS-Exact-Timeout'));
                     } else {
-                        console.log('⏱️ GPS Timeout: Failed to get exact lock (<50m)');
-                        resolve(null);
+                        console.log('⏱️ GPS Timeout: Failed to get lock, forcing low accuracy');
+                        // LAST RESORT: Try low accuracy
+                        navigator.geolocation.getCurrentPosition(
+                            (p) => {
+                                bestGpsPosition = p;
+                                gpsLocked = true;
+                                resolve(extractPositionData(p, 'GPS-LowAccuracy-Force'));
+                            },
+                            () => resolve(null),
+                            { enableHighAccuracy: false, timeout: 5000 }
+                        );
                     }
                 }, maxWait);
 
@@ -1071,8 +1079,8 @@
                             gpsLocked = true;
                         }
 
-                        // Stop early for high precision
-                        if (pos.coords.accuracy < 25) {
+                        // Stop early for reasonable precision (relaxed from 25m to 40m)
+                        if (pos.coords.accuracy < 40) {
                             console.log('✨ Exact GPS Lock Achieved!');
                             clearTimeout(timeout);
                             navigator.geolocation.clearWatch(watchId);
