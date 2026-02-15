@@ -87,7 +87,21 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(express.json({ limit: "10mb" }));
 
 
-const FileStore = require("session-file-store")(session);
+// Configure Session Store (MemoryStore for Production/Render, FileStore for Dev)
+let sessionStore;
+if (process.env.NODE_ENV === 'production') {
+  const MemoryStore = require('express-session').MemoryStore;
+  sessionStore = new MemoryStore();
+  console.log("Using MemoryStore for sessions (Production/Render)");
+} else {
+  const FileStore = require("session-file-store")(session);
+  sessionStore = new FileStore({
+    path: path.join(__dirname, "sessions"),
+    checkPeriod: 3600,
+    retries: 0
+  });
+  console.log("Using FileStore for sessions (Development)");
+}
 
 // Ensure essential directories exist (Required for Render/Ephemeral Filesystems)
 // Crucial: Use { recursive: true } to prevent race conditions or parent directory errors
@@ -114,11 +128,7 @@ if (!fs.existsSync(adminCapturesDir)) {
 // Session setup (secure secret from environment)
 app.use(
   session({
-    store: new FileStore({
-      path: path.join(__dirname, "sessions"),
-      checkPeriod: 3600,
-      retries: 5
-    }),
+    store: sessionStore,
     secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex"),
     resave: false,
     saveUninitialized: false,
