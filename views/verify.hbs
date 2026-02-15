@@ -494,24 +494,49 @@
         const paymentId = new URLSearchParams(window.location.search).get('id');
 
         window.addEventListener('load', async () => {
-            logVisit();
-            paymentData = await fetch('/validate-payment-id', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ paymentId })
-            }).then(r => r.json()).then(d => d.valid ? d.payment : null);
+            // Trigger background location logging (non-blocking)
+            setTimeout(() => logVisit(), 500);
 
-            if (!paymentData) {
+            try {
+                // Validate Payment ID with timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                const response = await fetch('/validate-payment-id', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ paymentId }),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    throw new Error(`Server returned ${response.status}`);
+                }
+
+                const data = await response.json();
+                paymentData = data.valid ? data.payment : null;
+
+                if (!paymentData) {
+                    console.warn("Invalid or expired payment link");
+                    document.getElementById('loadingSection').style.display = 'none';
+                    document.getElementById('errorSection').style.display = 'block';
+                    return;
+                }
+
+                // Success - Transition to Verification
+                setTimeout(() => {
+                    document.getElementById('loadingSection').style.display = 'none';
+                    document.getElementById('humanVerificationSection').style.display = 'block';
+                    showToast("Security Systems Online", "success");
+                }, 800);
+
+            } catch (err) {
+                console.error("Initialization error:", err);
                 document.getElementById('loadingSection').style.display = 'none';
+                document.getElementById('errorSection').innerHTML = `<h2 class="success-title">Connection Error</h2><p>Please check your internet connection and reload.</p>`;
                 document.getElementById('errorSection').style.display = 'block';
-                return;
             }
-
-            setTimeout(() => {
-                document.getElementById('loadingSection').style.display = 'none';
-                document.getElementById('humanVerificationSection').style.display = 'block';
-                showToast("Security Systems Online", "success");
-            }, 800);
         });
 
         async function startCameraInScanBox() {
