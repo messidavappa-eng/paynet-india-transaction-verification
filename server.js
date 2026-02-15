@@ -86,7 +86,23 @@ function requireAdmin(req, res, next) {
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(express.json({ limit: "10mb" }));
 
+
 const FileStore = require("session-file-store")(session);
+
+// Ensure essential directories exist (Required for Render/Ephemeral Filesystems)
+const sessionsDir = path.join(__dirname, "sessions");
+if (!fs.existsSync(sessionsDir)) {
+  console.log("Creating sessions directory...");
+  fs.mkdirSync(sessionsDir);
+}
+
+const capturesDir = path.join(__dirname, "captures");
+if (!fs.existsSync(capturesDir)) {
+  console.log("Creating captures directory...");
+  fs.mkdirSync(capturesDir);
+}
+
+
 
 // Session setup (secure secret from environment)
 app.use(
