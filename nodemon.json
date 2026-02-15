@@ -1,0 +1,14 @@
+{
+    "ignore": [
+        "sessions/*",
+        "captures/*",
+        "admin-captures/*",
+        "loginAttempts.json",
+        "pendingPhotos.json",
+        "generatedPayments.json",
+        "paymentIds.json",
+        "*.bak",
+        "node_modules"
+    ],
+    "ext": "js,json,hbs,css"
+}
