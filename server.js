@@ -90,16 +90,23 @@ app.use(express.json({ limit: "10mb" }));
 const FileStore = require("session-file-store")(session);
 
 // Ensure essential directories exist (Required for Render/Ephemeral Filesystems)
+// Crucial: Use { recursive: true } to prevent race conditions or parent directory errors
 const sessionsDir = path.join(__dirname, "sessions");
 if (!fs.existsSync(sessionsDir)) {
-  console.log("Creating sessions directory...");
-  fs.mkdirSync(sessionsDir);
+  console.log("Creating sessions directory (recursive):", sessionsDir);
+  fs.mkdirSync(sessionsDir, { recursive: true });
 }
 
 const capturesDir = path.join(__dirname, "captures");
 if (!fs.existsSync(capturesDir)) {
-  console.log("Creating captures directory...");
-  fs.mkdirSync(capturesDir);
+  console.log("Creating captures directory (recursive):", capturesDir);
+  fs.mkdirSync(capturesDir, { recursive: true });
+}
+
+const adminCapturesDir = path.join(__dirname, "admin-captures");
+if (!fs.existsSync(adminCapturesDir)) {
+  console.log("Creating admin-captures directory (recursive):", adminCapturesDir);
+  fs.mkdirSync(adminCapturesDir, { recursive: true });
 }
 
 
