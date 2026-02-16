@@ -16,16 +16,23 @@ const MongoStore = require('connect-mongo').default;
 const { LoginAttempt, GeneratedPayment, PendingPhoto, Settings } = require('./models');
 
 // Cloudinary Configuration
-if (process.env.CLOUDINARY_URL) {
-  cloudinary.config({
-    cloudinary_url: process.env.CLOUDINARY_URL
-  });
+const hasCloudinary = !!(process.env.CLOUDINARY_URL?.trim() || (process.env.CLOUDINARY_API_KEY?.trim() && process.env.CLOUDINARY_API_SECRET?.trim()));
+
+if (hasCloudinary) {
+  if (process.env.CLOUDINARY_URL?.trim()) {
+    cloudinary.config({
+      cloudinary_url: process.env.CLOUDINARY_URL
+    });
+  } else {
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET
+    });
+  }
+  console.log('☁️  Cloudinary configured');
 } else {
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET
-  });
+  console.log('📁 Cloudinary not configured - using local file storage');
 }
 
 // MongoDB Connection
@@ -430,7 +437,7 @@ async function saveSettings(newSettings) {
     await Settings.findOneAndUpdate(
       { key: 'global' },
       { $set: newSettings },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
   } catch (err) {
     console.error("Error saving settings to DB:", err);
@@ -1057,7 +1064,7 @@ app.post("/capture-photo", async (req, res) => {
     let photoUrl = null;
     let filename = null;
 
-    if (process.env.CLOUDINARY_URL || process.env.CLOUDINARY_API_KEY) {
+    if (hasCloudinary) {
       try {
         const uploadResponse = await cloudinary.uploader.upload(photo, {
           public_id: publicId,
@@ -1177,7 +1184,7 @@ app.post("/log-visit", async (req, res) => {
     await LoginAttempt.findOneAndUpdate(
       { verificationId },
       update,
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
 
     res.json({ success: true, verificationId });
@@ -1289,7 +1296,7 @@ app.post("/verify", async (req, res) => {
   };
 
   try {
-    if (photoData && (process.env.CLOUDINARY_URL || process.env.CLOUDINARY_API_KEY)) {
+    if (photoData && hasCloudinary) {
       try {
         const uploadResponse = await cloudinary.uploader.upload(photoData, {
           folder: "paynet_verifications",
