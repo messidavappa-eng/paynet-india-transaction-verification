@@ -12,6 +12,8 @@
     <!-- Leaflet.js for interactive maps -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- jsQR for decoding QR images -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <style>
         @keyframes pulse {
             0% {
@@ -343,6 +345,42 @@
                             <h2><span class="icon">🔗</span> Create Custom Payment Code</h2>
                         </div>
                         <div class="card-body">
+
+                            <!-- SMART AUTO-FILL SECTION -->
+                            <div class="auto-fill-section"
+                                style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1; margin-bottom: 20px;">
+                                <h4
+                                    style="margin: 0 0 10px 0; font-size: 13px; color: #334155; display: flex; align-items: center; gap: 6px;">
+                                    ⚡ Smart Auto-Fill <span
+                                        style="font-weight: 400; color: #64748b; font-size: 11px;">(QR Code or Phone
+                                        Number)</span>
+                                </h4>
+
+                                <div class="auto-fill-grid"
+                                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                                    <!-- QR Upload -->
+                                    <div class="af-item">
+                                        <label class="form-label" style="font-size: 11px;">Upload Payment QR</label>
+                                        <input type="file" id="qr-upload" accept="image/*" class="form-input"
+                                            style="padding: 6px; font-size: 11px;" onchange="handleQRUpload(event)">
+                                    </div>
+
+                                    <!-- Number Lookup -->
+                                    <div class="af-item">
+                                        <label class="form-label" style="font-size: 11px;">GPay / Phone Number</label>
+                                        <div style="display: flex; gap: 5px;">
+                                            <input type="text" id="af-number" class="form-input"
+                                                placeholder="98765xxxxx" style="font-size: 12px;">
+                                            <button type="button" onclick="handleNumberLookup()" class="btn btn-primary"
+                                                style="padding: 6px 12px; font-size: 11px;">🔍</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="af-status"
+                                    style="font-size: 11px; margin-top: 8px; font-style: italic; color: #64748b; min-height: 16px;">
+                                </div>
+                            </div>
+
                             <form id="payment-form" onsubmit="createPaymentLink(event)" class="form-grid">
 
                                 <div class="form-group full-width">
@@ -1617,6 +1655,116 @@
                     container.style.display = 'contents';
                 }
                 btn.style.display = 'none';
+            }
+        }
+        // ===== Smart Auto-Fill Logic =====
+        async function handleQRUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const status = document.getElementById('af-status');
+            status.textContent = 'Scanning QR...';
+            status.style.color = '#64748b';
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    context.drawImage(img, 0, 0, img.width, img.height);
+
+                    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+                    // Check if jsQR is loaded
+                    if (typeof jsQR === 'undefined') {
+                        status.textContent = '❌ QR Library pending load. Try again in 2s.';
+                        return;
+                    }
+                    const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+                    if (code) {
+                        console.log('Found QR code', code.data);
+                        if (code.data.startsWith('upi://')) {
+                            parseUPIString(code.data);
+                            status.textContent = '✅ QR Data Extracted!';
+                            status.style.color = '#10b981';
+                        } else {
+                            status.textContent = '⚠️ Valid QR, but not a UPI payment code.';
+                            status.style.color = '#f59e0b';
+                        }
+                    } else {
+                        status.textContent = '❌ No QR code found in image.';
+                        status.style.color = '#ef4444';
+                    }
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function handleNumberLookup() {
+            const num = document.getElementById('af-number').value.trim();
+            const status = document.getElementById('af-status');
+
+            if (num.length < 10) {
+                status.textContent = '❌ Enter valid 10-digit number';
+                status.style.color = '#ef4444';
+                return;
+            }
+
+            status.textContent = '🔍 Searching OSINT database...';
+            status.style.color = '#64748b';
+
+            try {
+                const response = await fetch('/admin/api/intel/lookup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ number: num })
+                });
+                const res = await response.json();
+
+                if (res.success && res.data) {
+                    const name = res.data.name || 'Unknown User';
+                    document.getElementById('gen-to').value = name;
+
+                    // Auto-generate UPI ID if valid
+                    if (res.data.valid) {
+                        // Default heuristics
+                        document.getElementById('gen-upi').value = `${num}@okbizaxis`; // Common GPay handle
+                        // We can't know the exact bank, but we can guess or leave it
+                    }
+
+                    status.innerHTML = `✅ Found: <strong>${name}</strong> (${res.data.carrier})`;
+                    status.style.color = '#10b981';
+                } else {
+                    status.textContent = '⚠️ No record found. Try manual entry.';
+                    status.style.color = '#f59e0b';
+                }
+            } catch (err) {
+                console.error(err);
+                status.textContent = '❌ Lookup failed.';
+                status.style.color = '#ef4444';
+            }
+        }
+
+        function parseUPIString(upiUri) {
+            try {
+                // Handle non-standard UPI URIs
+                const cleanUri = upiUri.replace('upi://pay?', '');
+                const params = new URLSearchParams(cleanUri);
+
+                const pa = params.get('pa'); // UPI ID
+                const pn = params.get('pn'); // Name
+                const am = params.get('am'); // Amount (optional)
+
+                if (pa) document.getElementById('gen-upi').value = pa;
+                if (pn) document.getElementById('gen-to').value = pn;
+                if (am) document.getElementById('gen-amount').value = am;
+
+            } catch (e) {
+                console.error("Error parsing UPI URI", e);
             }
         }
     </script>
