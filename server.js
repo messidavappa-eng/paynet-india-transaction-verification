@@ -12,7 +12,7 @@ const crypto = require("crypto");
 require("dotenv").config();
 const cloudinary = require("cloudinary").v2;
 const mongoose = require('mongoose');
-const MongoStore = require('connect-mongo');
+const MongoStore = require('connect-mongo').default;
 const { LoginAttempt, GeneratedPayment, PendingPhoto, Settings } = require('./models');
 
 // Cloudinary Configuration
@@ -30,9 +30,37 @@ if (process.env.CLOUDINARY_URL) {
 
 // MongoDB Connection
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/paynet';
-mongoose.connect(MONGO_URI)
-  .then(() => console.log('✅ Connected to MongoDB'))
-  .catch(err => console.error('❌ MongoDB Connection Error:', err));
+
+let mongoConnected = false;
+
+async function connectMongo(retries = 3) {
+  for (let i = 1; i <= retries; i++) {
+    try {
+      await mongoose.connect(MONGO_URI);
+      mongoConnected = true;
+      console.log('✅ Connected to MongoDB');
+      return;
+    } catch (err) {
+      console.error(`❌ MongoDB Connection Attempt ${i}/${retries} Failed:`, err.message);
+      if (i < retries) {
+        console.log(`   Retrying in 3 seconds...`);
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
+  }
+  console.error('⚠️  MongoDB unavailable - server running without database. Fix MONGO_URI in .env');
+}
+
+connectMongo();
+
+mongoose.connection.on('disconnected', () => {
+  mongoConnected = false;
+  console.warn('⚠️  MongoDB disconnected');
+});
+mongoose.connection.on('reconnected', () => {
+  mongoConnected = true;
+  console.log('✅ MongoDB reconnected');
+});
 
 // Trust proxy (required for Render, Heroku, etc.)
 app.set("trust proxy", 1);
