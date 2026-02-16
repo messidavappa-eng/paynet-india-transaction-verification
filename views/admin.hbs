@@ -179,6 +179,10 @@
                     <span class="nav-icon">🔗</span>
                     Payment Generator
                 </div>
+                <div class="nav-item" onclick="switchTab('generated-history')" id="nav-generated-history">
+                    <span class="nav-icon">📜</span>
+                    Generated History
+                </div>
 
 
 
@@ -405,6 +409,45 @@
                                 <div class="gen-code-box">
                                     <span class="gen-code" id="gen-id-display">—</span>
                                     <button onclick="copyGenID()" class="btn btn-primary btn-sm">📋 Copy</button>
+                                </div>
+
+                                <!-- ============ GENERATED HISTORY VIEW ============ -->
+                                <div id="view-generated-history" class="tab-view">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h2><span class="icon">📜</span> Generated Payment History</h2>
+                                            <div class="card-header-actions">
+                                                <button onclick="loadGeneratedHistory()" class="btn">🔄 Refresh</button>
+                                            </div>
+                                        </div>
+                                        <div class="card-body no-padding">
+                                            <div class="table-wrap">
+                                                <table>
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Date Created</th>
+                                                            <th>Payment ID</th>
+                                                            <th>Amount</th>
+                                                            <th>Merchant / To</th>
+                                                            <th>Payer / From</th>
+                                                            <th>Bank Name</th>
+                                                            <th>Action</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody id="generated-history-tbody">
+                                                        <tr>
+                                                            <td colspan="7">
+                                                                <div class="empty-state">
+                                                                    <div class="empty-icon">⏳</div>
+                                                                    <p>Loading history...</p>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -765,10 +808,15 @@
                 social: 'Social Command <span>· Instagram Control</span>',
                 number: 'Number Intel <span>· +91 Lookup</span>',
                 generator: 'Payment Generator <span>· Create Codes</span>',
+                'generated-history': 'Generated History <span>· Created Codes</span>',
                 identity: 'Identity Lookup <span>· OSINT Tools</span>',
                 settings: 'Settings <span>· Configuration</span>'
             };
             document.getElementById('page-title').innerHTML = titles[tabName] || tabName;
+
+            if (tabName === 'generated-history') {
+                loadGeneratedHistory();
+            }
 
             // Close mobile sidebar
             closeSidebar();
@@ -783,6 +831,85 @@
         function closeSidebar() {
             document.getElementById('sidebar').classList.remove('open');
             document.getElementById('sidebar-overlay').classList.remove('show');
+        }
+
+        // ===== Generated History Logic =====
+        async function loadGeneratedHistory() {
+            const tbody = document.getElementById('generated-history-tbody');
+            tbody.innerHTML = `<tr><td colspan="7">
+                <div class="empty-state">
+                    <div class="loader" style="margin: 0 auto 10px;"></div>
+                    <p>Loading payments...</p>
+                </div></td></tr>`;
+
+            try {
+                const response = await fetch('/admin/api/generated-payments');
+                const data = await response.json();
+
+                if (!data.success || !data.payments || data.payments.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="7">
+                        <div class="empty-state">
+                            <div class="empty-icon">📭</div>
+                            <p>No generated payments found</p>
+                        </div></td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = data.payments.map((p) => {
+                    const rawDate = p.createdAt || p.date;
+                    const dateObj = new Date(rawDate);
+                    const dateStr = dateObj.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
+                    const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                    return `
+                    <tr>
+                        <td>
+                            <div class="cell-strong">${dateStr}</div>
+                            <div class="cell-meta">${timeStr}</div>
+                        </td>
+                        <td>
+                           <div class="gen-code-box" style="justify-content:flex-start; background:none; padding:0;">
+                                <span class="gen-code" style="font-size:12px;">${p.id}</span>
+                                <button onclick="copyToClipboard('${p.id}')" class="btn btn-primary btn-sm photo-stack-btn">📋</button>
+                           </div>
+                        </td>
+                        <td>
+                            <div class="cell-strong" style="color:#10b981;">₹${p.amount}</div>
+                        </td>
+                        <td>
+                            <div class="cell-strong">${p.toName || '—'}</div>
+                        </td>
+                        <td>
+                            <div class="cell-strong">${p.fromName || '—'}</div>
+                        </td>
+                         <td>
+                            <div class="cell-strong">${p.bankName || '—'}</div>
+                            <div class="cell-meta">UPI: ${p.upiId || '—'}</div>
+                        </td>
+                        <td>
+                             <button onclick="copyToClipboard('http://' + window.location.host + '/#${p.id}')" class="btn btn-sm">🔗 Copy Link</button>
+                        </td>
+                    </tr>
+                    `;
+                }).join('');
+
+            } catch (e) {
+                console.error("Error loading generated history:", e);
+                tbody.innerHTML = `<tr><td colspan="7"><p style="text-align:center; color:red;">Failed to load data</p></td></tr>`;
+            }
+        }
+
+        async function copyToClipboard(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                // Simple feedback
+                const el = document.activeElement;
+                const originalText = el.innerHTML;
+                el.innerHTML = '✅ Copied!';
+                setTimeout(() => el.innerHTML = originalText, 1500);
+            } catch (err) {
+                console.error('Failed to copy:', err);
+            }
         }
 
         // ===== Interactive Leaflet Map =====

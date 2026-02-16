@@ -505,6 +505,17 @@ app.post("/validate-payment-id", async (req, res) => {
   }
 });
 
+// Admin API: Get all generated payments
+app.get("/admin/api/generated-payments", requireAdmin, async (req, res) => {
+  try {
+    const payments = await GeneratedPayment.find().sort({ createdAt: -1 }).lean();
+    res.json({ success: true, payments });
+  } catch (error) {
+    console.error("Error fetching generated payments:", error);
+    res.status(500).json({ success: false, error: "Failed to fetch payments" });
+  }
+});
+
 // Admin API: Generate payment
 app.post("/admin/api/generate-payment", requireAdmin, async (req, res) => {
   try {
