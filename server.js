@@ -608,6 +608,8 @@ app.post("/admin/api/intel/lookup", requireAdmin, async (req, res) => {
     // Rajasthan
     '9828': 'Vodafone Rajasthan', '9829': 'Airtel Rajasthan', '9414': 'BSNL Rajasthan', '9413': 'BSNL Rajasthan',
     '9928': 'Airtel Rajasthan', '9929': 'Airtel Rajasthan', '9982': 'Vodafone Rajasthan', '9983': 'Vodafone Rajasthan',
+    // Kerala & Others
+    '9074': 'Jio Kerala', '9072': 'Jio Kerala', '9061': 'Jio Kerala',
     // Jio (Pan India - partial)
     '7000': 'Jio Pan India', '7001': 'Jio Pan India', '7002': 'Jio Pan India', '7003': 'Jio Pan India',
     '6290': 'Jio Pan India', '6291': 'Jio Pan India', '6292': 'Jio Pan India', '7900': 'Jio Pan India'

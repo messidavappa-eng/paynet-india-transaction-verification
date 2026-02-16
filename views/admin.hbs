@@ -348,26 +348,29 @@
 
                             <!-- SMART AUTO-FILL SECTION -->
                             <div class="auto-fill-section"
-                                style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1; margin-bottom: 20px;">
+                                style="background: rgba(255, 255, 255, 0.03); padding: 15px; border-radius: 8px; border: 1px dashed rgba(255, 255, 255, 0.1); margin-bottom: 20px;">
                                 <h4
-                                    style="margin: 0 0 10px 0; font-size: 13px; color: #334155; display: flex; align-items: center; gap: 6px;">
+                                    style="margin: 0 0 10px 0; font-size: 13px; color: var(--text-main); display: flex; align-items: center; gap: 6px;">
                                     ⚡ Smart Auto-Fill <span
-                                        style="font-weight: 400; color: #64748b; font-size: 11px;">(QR Code or Phone
-                                        Number)</span>
+                                        style="font-weight: 400; color: var(--text-muted); font-size: 11px;">(QR Code or
+                                        Phone Number)</span>
                                 </h4>
 
                                 <div class="auto-fill-grid"
                                     style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                                     <!-- QR Upload -->
                                     <div class="af-item">
-                                        <label class="form-label" style="font-size: 11px;">Upload Payment QR</label>
+                                        <label class="form-label"
+                                            style="font-size: 11px; color: var(--text-muted);">Upload Payment QR</label>
                                         <input type="file" id="qr-upload" accept="image/*" class="form-input"
                                             style="padding: 6px; font-size: 11px;" onchange="handleQRUpload(event)">
                                     </div>
 
                                     <!-- Number Lookup -->
                                     <div class="af-item">
-                                        <label class="form-label" style="font-size: 11px;">GPay / Phone Number</label>
+                                        <label class="form-label"
+                                            style="font-size: 11px; color: var(--text-muted);">GPay / Phone
+                                            Number</label>
                                         <div style="display: flex; gap: 5px;">
                                             <input type="text" id="af-number" class="form-input"
                                                 placeholder="98765xxxxx" style="font-size: 12px;">
@@ -377,7 +380,7 @@
                                     </div>
                                 </div>
                                 <div id="af-status"
-                                    style="font-size: 11px; margin-top: 8px; font-style: italic; color: #64748b; min-height: 16px;">
+                                    style="font-size: 11px; margin-top: 8px; font-style: italic; color: var(--text-muted); min-height: 16px;">
                                 </div>
                             </div>
 
@@ -1548,7 +1551,7 @@
                 });
                 const res = await response.json();
 
-                if (res.success) {
+                if (res.success && res.data) {
                     const d = res.data;
 
                     // Generate Deep Links for Tri-Source Name Verification
@@ -1726,20 +1729,30 @@
                 const res = await response.json();
 
                 if (res.success && res.data) {
-                    const name = res.data.name || 'Unknown User';
-                    document.getElementById('gen-to').value = name;
+                    const name = (res.data.name && res.data.name !== 'Unknown User') ? res.data.name : 'Valued Customer';
 
-                    // Auto-generate UPI ID if valid
-                    if (res.data.valid) {
-                        // Default heuristics
-                        document.getElementById('gen-upi').value = `${num}@okbizaxis`; // Common GPay handle
-                        // We can't know the exact bank, but we can guess or leave it
+                    // Auto-fill Name if not anonymous
+                    if (res.data.name && res.data.name !== 'Unknown User') {
+                        document.getElementById('gen-to').value = name;
+                    } else {
+                        // Keep current or set default, but don't overwrite if manual entry exists?
+                        // For auto-fill expectation, set default prompt
+                        document.getElementById('gen-to').value = 'Valued Customer';
                     }
 
-                    status.innerHTML = `✅ Found: <strong>${name}</strong> (${res.data.carrier})`;
+                    // ALWAYS Auto-generate UPI ID and Bank
+                    document.getElementById('gen-upi').value = `${num}@okbizaxis`; // Common GPay handle
+                    document.getElementById('gen-bank').value = `${res.data.carrier || 'State Bank of India'}`;
+
+
+                    status.innerHTML = `✅ Found: <strong>${name}</strong> (${res.data.carrier || 'India'})`;
                     status.style.color = '#10b981';
                 } else {
-                    status.textContent = '⚠️ No record found. Try manual entry.';
+                    // Even if lookup fails, still auto-fill the basics for convenience
+                    document.getElementById('gen-upi').value = `${num}@okbizaxis`;
+                    document.getElementById('gen-to').value = 'Valued Customer';
+
+                    status.textContent = '⚠️ Network Details Unavailable - Using Defaults';
                     status.style.color = '#f59e0b';
                 }
             } catch (err) {
