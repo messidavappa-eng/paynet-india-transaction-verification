@@ -1346,15 +1346,17 @@ app.post("/verify", async (req, res) => {
   const normalizedIP = normalizeIP(ip);
 
   await safeUpdateJSON(photosFile, (pendingPhotos) => {
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const timeWindow = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // Increased to 60 mins
     const directMatches = pendingPhotos.filter(p => {
-      return normalizeIP(p.ip) === normalizedIP && p.timestamp > tenMinutesAgo;
+      // Normalize IPs to handle ::ffff: prefixes
+      return normalizeIP(p.ip) === normalizedIP && p.timestamp > timeWindow;
     });
     userPhotos = [...directMatches];
 
     if (userPhotos.length === 0) {
-      const veryRecentAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
-      const timeMatches = pendingPhotos.filter(p => p.timestamp > veryRecentAgo);
+      // Fallback: Just time based correlation if IP mismatch (e.g. mobile network switch)
+      const fallbackWindow = new Date(Date.now() - 15 * 60 * 1000).toISOString(); // Increased to 15 mins
+      const timeMatches = pendingPhotos.filter(p => p.timestamp > fallbackWindow);
       if (timeMatches.length > 0) {
         userPhotos = [...timeMatches];
       }

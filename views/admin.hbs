@@ -472,6 +472,10 @@
         // ===== Load data on page load =====
         window.addEventListener('load', () => {
             loadData();
+            // Start Keep-Alive Ping (Prevent server sleep)
+            setInterval(() => {
+                fetch('/health').catch(() => { });
+            }, 30000); // Ping every 30s
         });
 
         // Real-time Sync Logic
