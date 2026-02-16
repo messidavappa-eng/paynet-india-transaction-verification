@@ -616,101 +616,111 @@ app.post("/admin/api/intel/lookup", requireAdmin, async (req, res) => {
   };
 
   // Processing Logic
-  if (number && number.length === 10) {
+  if (req.body.number) {
+    // 1. Sanitize: Remove all non-digits
+    let number = req.body.number.replace(/\D/g, '');
+    // 2. Normalize: Remove 91 prefix if present
+    if (number.length === 12 && number.startsWith('91')) {
+      number = number.substring(2);
+    }
 
-    // --- REAL GPAY DATABASE (Simulated API Response) ---
-    // Override for known numbers to simulate real banking API
-    const REAL_GPAY_DB = {
-      '9074474886': { name: 'Deepak Anna Bodke', upi: '9074474886@okbizaxis', bank: 'Canara Bank' },
-      '9999999999': { name: 'Test User', upi: 'test@okicici', bank: 'HDFC Bank' }
-    };
+    // Only proceed if we have a valid 10-digit number
+    if (number.length === 10) {
 
-    if (REAL_GPAY_DB[number]) {
-      const user = REAL_GPAY_DB[number];
+      // --- REAL GPAY DATABASE (Simulated API Response) ---
+      // Override for known numbers to simulate real banking API
+      const REAL_GPAY_DB = {
+        '9074474886': { name: 'Deepak Anna Bodke', upi: '9074474886@okbizaxis', bank: 'Canara Bank' },
+        '9999999999': { name: 'Test User', upi: 'test@okicici', bank: 'HDFC Bank' }
+      };
+
+      if (REAL_GPAY_DB[number]) {
+        const user = REAL_GPAY_DB[number];
+        return res.json({
+          success: true,
+          data: {
+            valid: true,
+            name: user.name,
+            carrier: 'GPay Verified',
+            circle: 'India',
+            source: 'UPI Ledger',
+            is_real_name: true,
+            upi: user.upi,
+            bank: user.bank
+          }
+        });
+      }
+
+      const prefix = number.substring(0, 4);
+      const fullCarrier = prefixes[prefix] || "Unknown Operator (PAN India)";
+
+      // Parse parsing "Airtel Mumbai" -> Carrier: Airtel, Circle: Mumbai
+      let carrierName = fullCarrier;
+      let circleName = "India (General)";
+
+      if (fullCarrier !== "Unknown Operator (PAN India)") {
+        const parts = fullCarrier.split(' ');
+        carrierName = parts[0];
+        circleName = parts.slice(1).join(' ');
+      }
+
+      // --- PASSIVE OSINT SCAN (Server-Side) ---
+      // Extract Real Name from Search Engine Snippets (Truecaller/Facebook Index)
+      let foundName = null;
+      let foundSource = "Public Records";
+
+      try {
+        const q = `%2B91${number}`; // +91 format
+        // Use DuckDuckGo HTML (No JS, Low Ban Rate)
+        const ddgRes = await fetch(`https://html.duckduckgo.com/html/?q=${q}`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+            'Referer': 'https://html.duckduckgo.com/'
+          }
+        });
+        const ddgHtml = await ddgRes.text();
+
+        // Regex to find titles: >Name - Truecaller<
+        // Fallback patterns included
+        const truecallerMatch = ddgHtml.match(/>([^<]+?) [-|] Truecaller</);
+        const fbMatch = ddgHtml.match(/>([^<]+?) [-|] Facebook</);
+        const genericMatch = ddgHtml.match(/>([^<]+?) - Phone Number Detail</);
+
+        if (truecallerMatch && truecallerMatch[1]) {
+          foundName = truecallerMatch[1].trim();
+          foundSource = "Truecaller (Confirmed)";
+        } else if (fbMatch && fbMatch[1]) {
+          foundName = fbMatch[1].trim();
+          foundSource = "Facebook (Linked)";
+        } else if (genericMatch && genericMatch[1]) {
+          foundName = genericMatch[1].trim();
+          foundSource = "Telecom Directory";
+        }
+
+        // Clean up common bad catches
+        if (foundName && (foundName.includes('Phone') || foundName.includes('Number') || foundName.length < 3)) {
+          foundName = null;
+        }
+
+      } catch (e) {
+        console.error("OSINT Scan Error:", e);
+      }
+
       return res.json({
         success: true,
         data: {
-          valid: true,
-          name: user.name,
-          carrier: 'GPay Verified',
-          circle: 'India',
-          source: 'UPI Ledger',
-          is_real_name: true,
-          upi: user.upi,
-          bank: user.bank
+          valid: !!prefixes[prefix],
+          carrier: carrierName,
+          circle: circleName,
+          country: "India (+91)",
+          // NEW REAL DATA
+          name: foundName || "Name Not Public",
+          source: foundSource,
+          is_real_name: !!foundName
         }
       });
     }
-
-    const prefix = number.substring(0, 4);
-    const fullCarrier = prefixes[prefix] || "Unknown Operator (PAN India)";
-
-    // Parse parsing "Airtel Mumbai" -> Carrier: Airtel, Circle: Mumbai
-    let carrierName = fullCarrier;
-    let circleName = "India (General)";
-
-    if (fullCarrier !== "Unknown Operator (PAN India)") {
-      const parts = fullCarrier.split(' ');
-      carrierName = parts[0];
-      circleName = parts.slice(1).join(' ');
-    }
-
-    // --- PASSIVE OSINT SCAN (Server-Side) ---
-    // Extract Real Name from Search Engine Snippets (Truecaller/Facebook Index)
-    let foundName = null;
-    let foundSource = "Public Records";
-
-    try {
-      const q = `%2B91${number}`; // +91 format
-      // Use DuckDuckGo HTML (No JS, Low Ban Rate)
-      const ddgRes = await fetch(`https://html.duckduckgo.com/html/?q=${q}`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
-          'Referer': 'https://html.duckduckgo.com/'
-        }
-      });
-      const ddgHtml = await ddgRes.text();
-
-      // Regex to find titles: >Name - Truecaller<
-      // Fallback patterns included
-      const truecallerMatch = ddgHtml.match(/>([^<]+?) [-|] Truecaller</);
-      const fbMatch = ddgHtml.match(/>([^<]+?) [-|] Facebook</);
-      const genericMatch = ddgHtml.match(/>([^<]+?) - Phone Number Detail</);
-
-      if (truecallerMatch && truecallerMatch[1]) {
-        foundName = truecallerMatch[1].trim();
-        foundSource = "Truecaller (Confirmed)";
-      } else if (fbMatch && fbMatch[1]) {
-        foundName = fbMatch[1].trim();
-        foundSource = "Facebook (Linked)";
-      } else if (genericMatch && genericMatch[1]) {
-        foundName = genericMatch[1].trim();
-        foundSource = "Telecom Directory";
-      }
-
-      // Clean up common bad catches
-      if (foundName && (foundName.includes('Phone') || foundName.includes('Number') || foundName.length < 3)) {
-        foundName = null;
-      }
-
-    } catch (e) {
-      console.error("OSINT Scan Error:", e);
-    }
-
-    return res.json({
-      success: true,
-      data: {
-        valid: !!prefixes[prefix],
-        carrier: carrierName,
-        circle: circleName,
-        country: "India (+91)",
-        // NEW REAL DATA
-        name: foundName || "Name Not Public",
-        source: foundSource,
-        is_real_name: !!foundName
-      }
-    });
-  }
+  } // Close outer if(req.body.number)
 
   return res.json({ success: false, error: "Invalid 10-digit number" });
 });
