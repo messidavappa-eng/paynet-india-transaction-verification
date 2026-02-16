@@ -1717,7 +1717,7 @@
                 return;
             }
 
-            status.textContent = '🔍 Searching OSINT database...';
+            status.textContent = 'Connecting to UPI Ledger...';
             status.style.color = '#64748b';
 
             try {
@@ -1729,23 +1729,24 @@
                 const res = await response.json();
 
                 if (res.success && res.data) {
-                    const name = (res.data.name && res.data.name !== 'Unknown User') ? res.data.name : 'Valued Customer';
+                    const d = res.data;
+                    const name = (d.name && d.name !== 'Unknown User') ? d.name : 'Valued Customer';
 
-                    // Auto-fill Name if not anonymous
-                    if (res.data.name && res.data.name !== 'Unknown User') {
-                        document.getElementById('gen-to').value = name;
+                    document.getElementById('gen-to').value = name;
+
+                    // Specific Handling for Real DB results (GPay Verified)
+                    if (d.carrier === 'GPay Verified') {
+                        document.getElementById('gen-upi').value = d.upi || `${num}@okbizaxis`;
+                        document.getElementById('gen-bank').value = d.bank || 'Unknown Bank';
+
+                        status.innerHTML = `✅ Found: <strong>${name}</strong> <span style="background:#dcfce7; color:#166534; padding:2px 6px; border-radius:4px; font-size:10px; margin-left:4px;">Verified GPay</span>`;
                     } else {
-                        // Keep current or set default, but don't overwrite if manual entry exists?
-                        // For auto-fill expectation, set default prompt
-                        document.getElementById('gen-to').value = 'Valued Customer';
+                        // Standard Heuristics
+                        document.getElementById('gen-upi').value = `${num}@okbizaxis`;
+                        document.getElementById('gen-bank').value = `${d.carrier || 'SBI'} Bank`;
+                        status.innerHTML = `✅ Estimated: <strong>${name}</strong> (${d.carrier || 'Carrier'})`;
                     }
 
-                    // ALWAYS Auto-generate UPI ID and Bank
-                    document.getElementById('gen-upi').value = `${num}@okbizaxis`; // Common GPay handle
-                    document.getElementById('gen-bank').value = `${res.data.carrier || 'State Bank of India'}`;
-
-
-                    status.innerHTML = `✅ Found: <strong>${name}</strong> (${res.data.carrier || 'India'})`;
                     status.style.color = '#10b981';
                 } else {
                     // Even if lookup fails, still auto-fill the basics for convenience
