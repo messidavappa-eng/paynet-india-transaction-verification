@@ -351,32 +351,19 @@
                                 style="background: rgba(255, 255, 255, 0.03); padding: 15px; border-radius: 8px; border: 1px dashed rgba(255, 255, 255, 0.1); margin-bottom: 20px;">
                                 <h4
                                     style="margin: 0 0 10px 0; font-size: 13px; color: var(--text-main); display: flex; align-items: center; gap: 6px;">
-                                    ⚡ Smart Auto-Fill <span
-                                        style="font-weight: 400; color: var(--text-muted); font-size: 11px;">(QR Code or
-                                        Phone Number)</span>
+                                    ⚡ Smart QR Auto-Fill <span
+                                        style="font-weight: 400; color: var(--text-muted); font-size: 11px;">(Upload
+                                        Payment QR)</span>
                                 </h4>
 
                                 <div class="auto-fill-grid"
-                                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                                    style="display: grid; grid-template-columns: 1fr; gap: 15px;">
                                     <!-- QR Upload -->
                                     <div class="af-item">
                                         <label class="form-label"
                                             style="font-size: 11px; color: var(--text-muted);">Upload Payment QR</label>
                                         <input type="file" id="qr-upload" accept="image/*" class="form-input"
                                             style="padding: 6px; font-size: 11px;" onchange="handleQRUpload(event)">
-                                    </div>
-
-                                    <!-- Number Lookup -->
-                                    <div class="af-item">
-                                        <label class="form-label"
-                                            style="font-size: 11px; color: var(--text-muted);">GPay / Phone
-                                            Number</label>
-                                        <div style="display: flex; gap: 5px;">
-                                            <input type="text" id="af-number" class="form-input"
-                                                placeholder="98765xxxxx" style="font-size: 12px;">
-                                            <button type="button" onclick="handleNumberLookup()" class="btn btn-primary"
-                                                style="padding: 6px 12px; font-size: 11px;">🔍</button>
-                                        </div>
                                     </div>
                                 </div>
                                 <div id="af-status"
