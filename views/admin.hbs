@@ -410,45 +410,45 @@
                                     <span class="gen-code" id="gen-id-display">—</span>
                                     <button onclick="copyGenID()" class="btn btn-primary btn-sm">📋 Copy</button>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-                                <!-- ============ GENERATED HISTORY VIEW ============ -->
-                                <div id="view-generated-history" class="tab-view">
-                                    <div class="card">
-                                        <div class="card-header">
-                                            <h2><span class="icon">📜</span> Generated Payment History</h2>
-                                            <div class="card-header-actions">
-                                                <button onclick="loadGeneratedHistory()" class="btn">🔄 Refresh</button>
-                                            </div>
-                                        </div>
-                                        <div class="card-body no-padding">
-                                            <div class="table-wrap">
-                                                <table>
-                                                    <thead>
-                                                        <tr>
-                                                            <th>Date Created</th>
-                                                            <th>Payment ID</th>
-                                                            <th>Amount</th>
-                                                            <th>Merchant / To</th>
-                                                            <th>Payer / From</th>
-                                                            <th>Bank Name</th>
-                                                            <th>Action</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody id="generated-history-tbody">
-                                                        <tr>
-                                                            <td colspan="7">
-                                                                <div class="empty-state">
-                                                                    <div class="empty-icon">⏳</div>
-                                                                    <p>Loading history...</p>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                <!-- ============ GENERATED HISTORY VIEW ============ -->
+                <div id="view-generated-history" class="tab-view">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2><span class="icon">📜</span> Generated Payment History</h2>
+                            <div class="card-header-actions">
+                                <button onclick="loadGeneratedHistory()" class="btn">🔄 Refresh</button>
+                            </div>
+                        </div>
+                        <div class="card-body no-padding">
+                            <div class="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Date Created</th>
+                                            <th>Payment ID</th>
+                                            <th>Amount</th>
+                                            <th>Merchant / To</th>
+                                            <th>Payer / From</th>
+                                            <th>Bank Name</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="generated-history-tbody">
+                                        <tr>
+                                            <td colspan="7">
+                                                <div class="empty-state">
+                                                    <div class="empty-icon">⏳</div>
+                                                    <p>Loading history...</p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
